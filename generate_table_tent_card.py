@@ -1,0 +1,342 @@
+"""
+姓名桌签PDF生成器
+从CSV文件读取姓名，生成包含所有桌签的PDF文件
+每个桌签包含四个部分：空白、文字（倒）、文字、空白
+"""
+
+import csv
+import sys
+from pathlib import Path
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.units import cm
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
+# ==================== 全局配置 ====================
+
+# 纸张尺寸 (例如: A4, landscape(A4), A3, 等)
+PAGE_SIZE = A4
+
+# 字体文件路径，如果不存在则会尝试使用黑体
+FONT_NAME = ''
+
+# 区域比例: 空白:倒文字:正文字:空白
+SECTION_RATIOS = [2, 3, 3, 2]
+
+# 根据字数设置字体大小 (键为字数，0为默认值，单位: pt)
+FONT_SIZES = {
+    0: 118,   # 默认
+}
+
+# 根据字数设置字符间隔 (键为字数，0为默认值，单位: pt)
+CHAR_SPACING = {
+    0: 0,    # 默认 - 无额外间隔
+    2: 48,   # 两个字
+    3: 12,    # 三个字
+}
+
+# 文字两侧最小空白 (单位: pt)
+SIDE_MARGIN = 40
+
+# ================================================
+
+
+def read_names_from_csv(csv_file):
+    """从CSV文件读取姓名"""
+    names = []
+    try:
+        with open(csv_file, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                name = row.get('姓名') or row.get('name') or list(row.values())[0]
+                if name and name.strip():
+                    names.append(name.strip())
+    except FileNotFoundError:
+        print(f"❌️ 错误: 文件 {csv_file} 不存在")
+        return []
+    except Exception as e:
+        print(f"❌️ 错误: 读取CSV文件出错: {e}")
+        return []
+    
+    return names
+
+
+def register_fonts(font_path=None):
+    """
+    注册中文字体 (多平台支持)
+    
+    优先尝试使用用户指定的字体。
+    其次尝试在系统中查找常见的中文字体。
+    最后回退到 Helvetica。
+    """
+    if font_path:
+        if Path(font_path).exists():
+            try:
+                short_name = Path(font_path).stem
+                pdfmetrics.registerFont(TTFont(short_name, font_path))
+                return short_name
+            except Exception:
+                print(f"⚠️ 警告: 导入{font_path}失败，使用黑体")
+        else:
+            print(f"⚠️ 警告: 未找到{font_path}，使用黑体")
+    
+    # 定义不同平台的中文字体搜索路径 (黑体的各种可能名称)
+    font_paths = []
+    if sys.platform == 'win32':
+        # Windows 字体路径 (黑体的各种可能名称)
+        font_paths = [
+            "C:\\Windows\\Fonts\\simhei.ttf",
+            "C:\\Windows\\Fonts\\SimHei.ttf",
+            "C:\\Windows\\Fonts\\SIMHEI.TTF",
+            "C:\\Windows\\SysWOW64\\Fonts\\simhei.ttf",
+            "C:\\Windows\\SysWOW64\\Fonts\\SimHei.ttf",
+        ]
+    elif sys.platform == 'darwin':
+        # macOS 字体路径 (黑体和STHeiti)
+        font_paths = [
+            "/Library/Fonts/simhei.ttf",
+            "/Library/Fonts/SimHei.ttf",
+            "/Library/Fonts/STHeiti Light.ttc",
+            "/Library/Fonts/STHeiti.ttc",
+            "/System/Library/Fonts/STHeiti Light.ttc",
+            "/System/Library/Fonts/STHeiti.ttc",
+        ]
+    else:
+        # Linux 字体路径 (SimHei, Noto Sans CJK等)
+        font_paths = [
+            "/usr/share/fonts/chinese/simhei.ttf",
+            "/usr/share/fonts/truetype/SimHei/simhei.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Medium.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Medium.ttc",
+            "/usr/share/fonts/truetype/droid/DroidSansFallback.ttf",
+        ]
+    
+    # 尝试找到并注册字体
+    for font_path in font_paths:
+        try:
+            if Path(font_path).exists():
+                short_name = Path(font_path).stem
+                pdfmetrics.registerFont(TTFont(short_name, font_path))
+                return short_name
+        except Exception:
+            continue
+    print(f"⚠️ 警告: 未找到黑体，请手动指定。使用Helvetica（仅限ACSII）")
+    return 'Helvetica'
+
+
+def generate_pdf(names, output_file='table_tent_cards.pdf'):
+    """
+    生成包含所有桌签的PDF
+    
+    每个桌签占满整页，布局（从上到下）:
+    1. 空白区域 
+    2. 文字倒过来  - 给对面的人看
+    3. 文字正常 - 给这一面的人看
+    4. 空白区域 
+    """
+    if not names:
+        print("❌️ 错误: 没有要处理的姓名")
+        return False
+    
+    font_name = register_fonts(FONT_NAME)
+    
+    # 创建PDF - 使用配置的纸张类型，每个桌签占满整页
+    c = canvas.Canvas(output_file, pagesize=PAGE_SIZE)
+    
+    page_width, page_height = PAGE_SIZE
+    
+    for name_idx, name in enumerate(names):
+        # 检查是否需要新页面（第一个名字不需要新页面）
+        if name_idx > 0:
+            c.showPage()
+        
+        # 绘制占满整页的卡片
+        draw_card(c, 0, 0, page_width, page_height, name, font_name)
+    
+    c.save()
+    print(f"✅ 成功生成PDF: {output_file}")
+    return True
+
+
+def draw_card(c, x, y, width, height, name, font_name):
+    """
+    绘制单个桌签（占满整页）
+    
+    布局(按SECTION_RATIOS比例):
+    ========================
+    |        空白         | 
+    +-------- -- ---------+
+    |     文字(倒过来)    | 
+    +-------- -- ---------+
+    |      文字(正常)     | 
+    +-------- -- ---------+
+    |        空白         | 
+    ========================
+    
+    文字根据字数自动调整大小、间隔和缩放
+    """
+    # 计算各区域高度
+    total_ratio = sum(SECTION_RATIOS)
+    section_heights = [height * ratio / total_ratio for ratio in SECTION_RATIOS]
+    
+    # 设置横向分割线 - 浅灰色
+    c.setLineWidth(0.5)
+    light_gray = colors.HexColor('#D3D3D3')  # 浅灰色
+    c.setStrokeColor(light_gray)
+    
+    # 绘制3条横线（分隔4个部分）
+    line_y_positions = [
+        y + section_heights[0],
+        y + section_heights[0] + section_heights[1],
+        y + section_heights[0] + section_heights[1] + section_heights[2]
+    ]
+    
+    for line_y in line_y_positions:
+        c.line(x, line_y, x + width, line_y)
+    
+    # 根据字数获取字体参数
+    name_length = len(name)
+    font_size = FONT_SIZES.get(name_length, FONT_SIZES[0])
+    char_spacing = CHAR_SPACING.get(name_length, CHAR_SPACING[0])
+    
+    c.setFont(font_name, font_size)
+    c.setFillColor(colors.black)
+    
+    # 第1部分: 空白 (y + sum(section_heights[1:]) 到 y + height)
+    # 保持空白
+    
+    # 第2部分: 文字倒过来 (y + section_heights[0] + section_heights[1] + section_heights[2] 到高处)
+    section_y = y + section_heights[0] + section_heights[1]
+    section_height = section_heights[1]
+    
+    draw_text_centered(c, x, section_y, width, section_height, name, 
+                      font_name, font_size, char_spacing, rotated=True)
+    
+    # 第3部分: 文字正常 (y + section_heights[0] 到 y + section_heights[0] + section_heights[1])
+    section_y = y + section_heights[0]
+    section_height = section_heights[2]
+    
+    draw_text_centered(c, x, section_y, width, section_height, name,
+                      font_name, font_size, char_spacing, rotated=False)
+    
+    # 第4部分: 空白 (y 到 y + section_heights[0])
+    # 保持空白
+
+
+def draw_text_centered(c, x, y, width, height, text, font_name, font_size, 
+                      char_spacing, rotated=False):
+    """
+    在指定区域内绘制居中的文字
+    
+    默认不缩放。如果文字宽度超出可用宽度，使用水平缩放以保证显示完整。
+    两侧保留最小空白 SIDE_MARGIN。
+    水平缩放时，字体和间距都会按比例缩放。
+    
+    参数:
+        c: canvas对象
+        x, y, width, height: 绘制区域坐标和尺寸
+        text: 要绘制的文字
+        font_name: 字体名称
+        font_size: 字号
+        char_spacing: 字符间隔 (点)
+        rotated: 是否旋转180度
+    """
+    if not text:
+        return
+    
+    c.setFont(font_name, font_size)
+    
+    # 可用宽度（留出两侧空白）
+    available_width = width - 2 * SIDE_MARGIN
+    
+    # 计算文字宽度
+    total_spacing = char_spacing * (len(text) - 1) if len(text) > 1 else 0
+    
+    # 计算每个字的宽度
+    char_widths = []
+    for char in text:
+        char_widths.append(c.stringWidth(char, font_name, font_size))
+    text_width = sum(char_widths) + total_spacing
+    
+    # 检查是否需要缩放
+    scale_factor = 1.0
+    if text_width > available_width:
+        scale_factor = available_width / text_width
+    
+    # 垂直居中 - 使用更好的基线计算
+    text_y = y + (height - font_size) / 2 + font_size * 0.2
+    
+    if rotated:
+        # 旋转180度显示
+        c.saveState()
+        center_x = x + width / 2
+        center_y = y + height / 2
+        c.translate(center_x, center_y)
+        c.rotate(180)
+        
+        # 应用水平缩放
+        if scale_factor != 1.0:
+            c.scale(scale_factor, 1)
+        
+        # 在缩放后的坐标系中，文字宽度不变
+        current_x = -text_width / 2
+        draw_y = -(font_size / 2) + font_size * 0.2
+        
+        for i, char in enumerate(text):
+            c.drawString(current_x, draw_y, char)
+            # 推进：原始字宽 + 原始间距（都在缩放坐标系中）
+            current_x += char_widths[i] + char_spacing
+        
+        c.restoreState()
+    else:
+        # 正常显示
+        c.saveState()
+        
+        if scale_factor != 1.0:
+            center_x = x + width / 2
+            c.translate(center_x, 0)
+            c.scale(scale_factor, 1)
+            
+            # 在缩放后的坐标系中，文字宽度不变
+            current_x = -text_width / 2
+        else:
+            # 无缩放，直接水平居中
+            current_x = x + (width - text_width) / 2
+        
+        draw_y = text_y
+        
+        for i, char in enumerate(text):
+            c.drawString(current_x, draw_y, char)
+            # 推进：原始字宽 + 原始间距
+            current_x += char_widths[i] + char_spacing
+        
+        c.restoreState()
+
+
+def main():
+    """主函数"""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='姓名桌签PDF生成器')
+    parser.add_argument('-i', '--input', default='names.csv', help='输入CSV文件（默认: names.csv）')
+    parser.add_argument('-o', '--output', default='table_tent_cards.pdf', help='输出PDF文件（默认: table_tent_cards.pdf）')
+    
+    args = parser.parse_args()
+    
+    print(f"📋 读取CSV文件: {args.input}")
+    names = read_names_from_csv(args.input)
+    
+    if not names:
+        print("❎ 未能读取任何姓名")
+        return
+    
+    print(f"✅ 成功读取 {len(names)} 个姓名")
+    print(f"🎯 生成PDF文件: {args.output}")
+    
+    generate_pdf(names, args.output)
+
+
+if __name__ == '__main__':
+    main()
