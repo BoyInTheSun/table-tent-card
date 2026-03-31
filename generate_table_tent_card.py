@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 姓名桌签PDF生成器
 从CSV、XLS、XLSX等格式文件读取姓名，生成包含所有桌签的PDF文件
@@ -22,7 +23,7 @@ PAGE_SIZE = A4
 # 字体文件路径，如果不存在则会尝试使用黑体
 FONT_NAME = ''
 
-# 文字区域高度 (单位: cm, 倒文字和正文字各占此高度，剩余为上下空白)
+# 文字区域高度 (单位: mm, 倒文字和正文字区域各占此高度，剩余为上下空白)
 TEXT_HEIGHT_MM = 90
 
 # 根据字数设置字体大小 (键为字数，0为默认值，单位: pt)
@@ -40,11 +41,15 @@ CHAR_SPACING = {
 # 文字两侧最小空白 (单位: pt)
 SIDE_MARGIN = 40
 
-# 页头，优先级高于表格，留空则从表格读取
-HEADER = None
+# 页头
+HEADER = None  # 页头文字，优先级高于表格，留空则从表格读取
+HEADER_MARGIN = 20  # 页头距区域顶部距离 (单位: pt)
+HEADER_FONT_SIZE = 24  # 页头字号
 
-# 页脚，优先级高于表格，留空则从表格读取
-FOOTER = None
+# 页脚
+FOOTER = None  # 页脚文字，优先级高于表格，留空则从表格读取
+FOOTER_MARGIN = 20  # 页脚距区域底部距离
+FOOTER_FONT_SIZE = 24  # 页脚字号
 
 # ================================================
 
@@ -60,8 +65,11 @@ def read_names_from_file(input_file):
     
     自动检测文件格式并使用相应的读取方法。
     优先查找 '姓名' 列，其次是 'name' 列。
+    如果存在 '页头'、'header'、'页脚'、'footer' 列，则逐行读取对应值。
+    如果全局变量 HEADER/FOOTER 已设置，则优先使用全局值覆盖所有行。
+    返回列表: [(name, header, footer), ...]
     """
-    names = []
+    data = []
     try:
         file_path = Path(input_file)
         if not file_path.exists():
@@ -86,20 +94,35 @@ def read_names_from_file(input_file):
         elif 'name' in df.columns:
             name_column = 'name'
         elif len(df.columns) > 0:
-            # 如果没有找到预期的列名，使用第一列
             name_column = df.columns[0]
             print(f"【警告】未找到'姓名'或'name'列，使用第一列: '{name_column}'")
         else:
             print("【错误】文件中没有数据列")
             return []
+
+        # 检查页头/页脚列
+        header_column = None
+        footer_column = None
+        for col in ['页头', 'header', 'Header', 'HEADER']:
+            if col in df.columns:
+                header_column = col
+                break
+        for col in ['页脚', 'footer', 'Footer', 'Footer']:
+            if col in df.columns:
+                footer_column = col
+                break
+
+        # 提取数据
+        for idx, row in df.iterrows():
+            name = str(row[name_column]).strip()
+            if name and name.lower() not in ['nan', 'none', 'nan.']:
+                # 页头：优先全局，否则逐行
+                header = HEADER or (str(row[header_column]).strip() if header_column and not pd.isna(row[header_column]) else '')
+                # 页脚：优先全局，否则逐行
+                footer = FOOTER or (str(row[footer_column]).strip() if footer_column and not pd.isna(row[footer_column]) else '')
+                data.append((name, header, footer))
         
-        # 提取姓名
-        for value in df[name_column]:
-            name = str(value).strip()
-            if name and name != 'nan' and name != 'None':
-                names.append(name)
-        
-        if not names:
+        if not data:
             print(f"【错误】未从 '{name_column}' 列读取到任何数据")
             return []
         
@@ -110,7 +133,7 @@ def read_names_from_file(input_file):
         print(f"【错误】读取文件出错: {e}")
         return []
     
-    return names
+    return data
 
 
 def register_fonts(font_path=None):
@@ -177,7 +200,7 @@ def register_fonts(font_path=None):
     return 'Helvetica'
 
 
-def generate_pdf(names, output_file='table_tent_cards.pdf'):
+def generate_pdf(data, output_file='table_tent_cards.pdf'):
     """
     生成包含所有桌签的PDF
     
@@ -187,7 +210,7 @@ def generate_pdf(names, output_file='table_tent_cards.pdf'):
     3. 文字正常 - 给这一面的人看
     4. 空白区域 
     """
-    if not names:
+    if not data:
         print("【错误】️没有要处理的姓名")
         return False
     
@@ -198,20 +221,21 @@ def generate_pdf(names, output_file='table_tent_cards.pdf'):
     
     page_width, page_height = PAGE_SIZE
     
-    for name_idx, name in enumerate(names):
+    for item_idx, (name, header_text, footer_text) in enumerate(data):
         # 检查是否需要新页面（第一个名字不需要新页面）
-        if name_idx > 0:
+        if item_idx > 0:
             c.showPage()
         
         # 绘制占满整页的卡片
-        draw_card(c, 0, 0, page_width, page_height, name, font_name)
+        draw_card(c, 0, 0, page_width, page_height, name, font_name,
+                  header_text=header_text, footer_text=footer_text)
     
     c.save()
     print(f"【成功】生成PDF: {output_file}")
     return True
 
 
-def draw_card(c, x, y, width, height, name, font_name):
+def draw_card(c, x, y, width, height, name, font_name, header_text='', footer_text=''):
     """
     绘制单个桌签（占满整页）
     
@@ -227,6 +251,7 @@ def draw_card(c, x, y, width, height, name, font_name):
     ========================
     
     文字根据字数自动调整大小、间隔和水平缩放
+    并为每个文字区域添加页头/页脚小字（header/footer）。
     """
     # 计算各区域高度
     text_height_pt = TEXT_HEIGHT_MM * mm
@@ -259,22 +284,52 @@ def draw_card(c, x, y, width, height, name, font_name):
     # 第1部分: 空白 (y + sum(section_heights[1:]) 到 y + height)
     # 保持空白
     
-    # 第2部分: 文字倒过来 (y + section_heights[0] + section_heights[1] + section_heights[2] 到高处)
+    # 第2部分: 文字倒过来
     section_y = y + section_heights[0] + section_heights[1]
     section_height = section_heights[1]
+    draw_text_block(c, x, section_y, width, section_height, header_text, name, footer_text,
+                    font_name, font_size, char_spacing, rotated=True)
     
-    draw_text_centered(c, x, section_y, width, section_height, name, 
-                      font_name, font_size, char_spacing, rotated=True)
-    
-    # 第3部分: 文字正常 (y + section_heights[0] 到 y + section_heights[0] + section_heights[1])
+    # 第3部分: 文字正常
     section_y = y + section_heights[0]
     section_height = section_heights[2]
-    
-    draw_text_centered(c, x, section_y, width, section_height, name,
-                      font_name, font_size, char_spacing, rotated=False)
+    draw_text_block(c, x, section_y, width, section_height, header_text, name, footer_text,
+                    font_name, font_size, char_spacing, rotated=False)
     
     # 第4部分: 空白 (y 到 y + section_heights[0])
     # 保持空白
+
+
+def draw_text_block(c, x, y, width, height, header_text, main_text, footer_text,
+                    font_name, font_size, char_spacing, rotated=False):
+    """
+    在一个文本区域内绘制页头、姓名、页脚三行文字。
+
+    header_text：区域顶部的小字
+    main_text：区域中间的大字
+    footer_text：区域底部的小字
+    """
+    if not header_text and not main_text and not footer_text:
+        return
+
+    # 上方小字 (页头)
+    if header_text:
+        draw_text_centered(c, x, y + height - HEADER_MARGIN - HEADER_FONT_SIZE,
+                          width, HEADER_FONT_SIZE + 2, header_text,
+                          font_name, HEADER_FONT_SIZE, 0, rotated)
+
+    # 下方小字 (页脚)
+    if footer_text:
+        draw_text_centered(c, x, y + FOOTER_MARGIN,
+                          width, FOOTER_FONT_SIZE + 2, footer_text,
+                          font_name, FOOTER_FONT_SIZE, 0, rotated)
+
+    # 中间主体文字区域
+    inner_y = y + FOOTER_MARGIN + (FOOTER_FONT_SIZE + 2 if footer_text else 0)
+    inner_height = height - HEADER_MARGIN - FOOTER_MARGIN - (HEADER_FONT_SIZE + 2 if header_text else 0) - (FOOTER_FONT_SIZE + 2 if footer_text else 0)
+    if inner_height > 0 and main_text:
+        draw_text_centered(c, x, inner_y, width, inner_height, main_text,
+                          font_name, font_size, char_spacing, rotated)
 
 
 def draw_text_centered(c, x, y, width, height, text, font_name, font_size, 
@@ -378,15 +433,15 @@ def main():
     args = parser.parse_args()
     
     print(f"【信息】读取文件: {args.input}")
-    names = read_names_from_file(args.input)
+    data = read_names_from_file(args.input)
     
-    if not names:
+    if not data:
         print("【错误】未能读取任何姓名")
         return
     
-    print(f"【成功】读取 {len(names)} 个姓名")
+    print(f"【成功】读取 {len(data)} 个姓名")
     
-    generate_pdf(names, args.output)
+    generate_pdf(data, args.output)
 
 
 if __name__ == '__main__':
