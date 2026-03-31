@@ -27,6 +27,10 @@ pip install -r requirements.txt
 python generate_table_tent_card.py
 ```
 
+### 4. 打印
+
+使用粉纸打印后，沿线折叠，空白区域重叠并用胶棒或订书器粘合，即可制成简易三角桌签。也可以将其卡入透明桌签卡台使用。
+
 ## 用法
 
 ```bash

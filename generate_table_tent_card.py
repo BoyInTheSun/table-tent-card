@@ -1,14 +1,14 @@
 """
 姓名桌签PDF生成器
-从CSV文件读取姓名，生成包含所有桌签的PDF文件
+从CSV、XLS、XLSX等格式文件读取姓名，生成包含所有桌签的PDF文件
 每个桌签包含四个部分：空白、文字（倒）、文字、空白
 """
 
-import csv
+import pandas as pd
 import sys
 from pathlib import Path
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.units import cm
+from reportlab.lib.pagesizes import A4, LETTER, A3, landscape
+from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 from reportlab.pdfbase import pdfmetrics
@@ -16,14 +16,14 @@ from reportlab.pdfbase.ttfonts import TTFont
 
 # ==================== 全局配置 ====================
 
-# 纸张尺寸 (例如: A4, landscape(A4), A3, 等)
+# 纸张尺寸 (例如: A4, landscape(A3), LETTER, 等)
 PAGE_SIZE = A4
 
 # 字体文件路径，如果不存在则会尝试使用黑体
 FONT_NAME = ''
 
-# 区域比例: 空白:倒文字:正文字:空白
-SECTION_RATIOS = [2, 3, 3, 2]
+# 文字区域高度 (单位: cm, 倒文字和正文字各占此高度，剩余为上下空白)
+TEXT_HEIGHT_MM = 90
 
 # 根据字数设置字体大小 (键为字数，0为默认值，单位: pt)
 FONT_SIZES = {
@@ -40,24 +40,74 @@ CHAR_SPACING = {
 # 文字两侧最小空白 (单位: pt)
 SIDE_MARGIN = 40
 
+# 页头，优先级高于表格，留空则从表格读取
+HEADER = None
+
+# 页脚，优先级高于表格，留空则从表格读取
+FOOTER = None
+
 # ================================================
 
 
-def read_names_from_csv(csv_file):
-    """从CSV文件读取姓名"""
+def read_names_from_file(input_file):
+    """
+    从多种格式文件读取姓名 (支持 CSV、XLS、XLSX等)
+    
+    支持的格式:
+    - CSV (.csv)
+    - Excel XLS (.xls)
+    - Excel XLSX (.xlsx)
+    
+    自动检测文件格式并使用相应的读取方法。
+    优先查找 '姓名' 列，其次是 'name' 列。
+    """
     names = []
     try:
-        with open(csv_file, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                name = row.get('姓名') or row.get('name') or list(row.values())[0]
-                if name and name.strip():
-                    names.append(name.strip())
-    except FileNotFoundError:
-        print(f"❌️ 错误: 文件 {csv_file} 不存在")
+        file_path = Path(input_file)
+        if not file_path.exists():
+            print(f"【错误】文件 {input_file} 不存在")
+            return []
+        
+        suffix = file_path.suffix.lower()
+        
+        # 根据文件扩展名选择读取方法
+        if suffix == '.csv':
+            df = pd.read_csv(input_file, dtype=str)
+        elif suffix in ['.xls', '.xlsx']:
+            df = pd.read_excel(input_file, dtype=str)
+        else:
+            print(f"【错误】不支持的文件格式 {suffix}。支持的格式: .csv, .xls, .xlsx")
+            return []
+        
+        # 查找姓名列（优先查找中文列名）
+        name_column = None
+        if '姓名' in df.columns:
+            name_column = '姓名'
+        elif 'name' in df.columns:
+            name_column = 'name'
+        elif len(df.columns) > 0:
+            # 如果没有找到预期的列名，使用第一列
+            name_column = df.columns[0]
+            print(f"【警告】未找到'姓名'或'name'列，使用第一列: '{name_column}'")
+        else:
+            print("【错误】文件中没有数据列")
+            return []
+        
+        # 提取姓名
+        for value in df[name_column]:
+            name = str(value).strip()
+            if name and name != 'nan' and name != 'None':
+                names.append(name)
+        
+        if not names:
+            print(f"【错误】未从 '{name_column}' 列读取到任何数据")
+            return []
+        
+    except pd.errors.ParserError as e:
+        print(f"【错误】解析文件时出错: {e}")
         return []
     except Exception as e:
-        print(f"❌️ 错误: 读取CSV文件出错: {e}")
+        print(f"【错误】读取文件出错: {e}")
         return []
     
     return names
@@ -78,9 +128,9 @@ def register_fonts(font_path=None):
                 pdfmetrics.registerFont(TTFont(short_name, font_path))
                 return short_name
             except Exception:
-                print(f"⚠️ 警告: 导入{font_path}失败，使用黑体")
+                print(f"【警告】警告: 导入{font_path}失败，使用黑体")
         else:
-            print(f"⚠️ 警告: 未找到{font_path}，使用黑体")
+            print(f"【警告】警告: 未找到{font_path}，使用黑体")
     
     # 定义不同平台的中文字体搜索路径 (黑体的各种可能名称)
     font_paths = []
@@ -119,10 +169,11 @@ def register_fonts(font_path=None):
             if Path(font_path).exists():
                 short_name = Path(font_path).stem
                 pdfmetrics.registerFont(TTFont(short_name, font_path))
+                print(f"【提示】使用字体{font_path}")
                 return short_name
         except Exception:
             continue
-    print(f"⚠️ 警告: 未找到黑体，请手动指定。使用Helvetica（仅限ACSII）")
+    print(f"【警告】未找到黑体，请手动指定。使用Helvetica（仅限ACSII）")
     return 'Helvetica'
 
 
@@ -137,7 +188,7 @@ def generate_pdf(names, output_file='table_tent_cards.pdf'):
     4. 空白区域 
     """
     if not names:
-        print("❌️ 错误: 没有要处理的姓名")
+        print("【错误】️没有要处理的姓名")
         return False
     
     font_name = register_fonts(FONT_NAME)
@@ -156,7 +207,7 @@ def generate_pdf(names, output_file='table_tent_cards.pdf'):
         draw_card(c, 0, 0, page_width, page_height, name, font_name)
     
     c.save()
-    print(f"✅ 成功生成PDF: {output_file}")
+    print(f"【成功】生成PDF: {output_file}")
     return True
 
 
@@ -164,22 +215,23 @@ def draw_card(c, x, y, width, height, name, font_name):
     """
     绘制单个桌签（占满整页）
     
-    布局(按SECTION_RATIOS比例):
+    布局(根据TEXT_HEIGHT_CM计算):
     ========================
-    |        空白         | 
+    |    上空白 (自动计算)   | 
     +-------- -- ---------+
-    |     文字(倒过来)    | 
+    |     文字(倒过来)    | (TEXT_HEIGHT_CM)
     +-------- -- ---------+
-    |      文字(正常)     | 
+    |      文字(正常)     | (TEXT_HEIGHT_CM)
     +-------- -- ---------+
-    |        空白         | 
+    |    下空白 (自动计算)   | 
     ========================
     
-    文字根据字数自动调整大小、间隔和缩放
+    文字根据字数自动调整大小、间隔和水平缩放
     """
     # 计算各区域高度
-    total_ratio = sum(SECTION_RATIOS)
-    section_heights = [height * ratio / total_ratio for ratio in SECTION_RATIOS]
+    text_height_pt = TEXT_HEIGHT_MM * mm
+    empty_height = (height - 2 * text_height_pt) / 2
+    section_heights = [empty_height, text_height_pt, text_height_pt, empty_height]
     
     # 设置横向分割线 - 浅灰色
     c.setLineWidth(0.5)
@@ -320,20 +372,19 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='姓名桌签PDF生成器')
-    parser.add_argument('-i', '--input', default='names.csv', help='输入CSV文件（默认: names.csv）')
-    parser.add_argument('-o', '--output', default='table_tent_cards.pdf', help='输出PDF文件（默认: table_tent_cards.pdf）')
+    parser.add_argument('-i', '--input', default='names.csv', help='输入文件 (支持格式: .csv, .xls, .xlsx, 默认: names.csv)')
+    parser.add_argument('-o', '--output', default='table_tent_cards.pdf', help='输出PDF文件 (默认: table_tent_cards.pdf)')
     
     args = parser.parse_args()
     
-    print(f"📋 读取CSV文件: {args.input}")
-    names = read_names_from_csv(args.input)
+    print(f"【信息】读取文件: {args.input}")
+    names = read_names_from_file(args.input)
     
     if not names:
-        print("❎ 未能读取任何姓名")
+        print("【错误】未能读取任何姓名")
         return
     
-    print(f"✅ 成功读取 {len(names)} 个姓名")
-    print(f"🎯 生成PDF文件: {args.output}")
+    print(f"【成功】读取 {len(names)} 个姓名")
     
     generate_pdf(names, args.output)
 
