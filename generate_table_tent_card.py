@@ -48,7 +48,7 @@ HEADER_FONT_SIZE = 24  # 页头字号
 
 # 页脚
 FOOTER = None  # 页脚文字，优先级高于表格，留空则从表格读取
-FOOTER_MARGIN = 20  # 页脚距区域底部距离
+FOOTER_MARGIN = 20  # 页脚距区域底部距离 (单位: pt)
 FOOTER_FONT_SIZE = 24  # 页脚字号
 
 # ================================================
@@ -239,13 +239,13 @@ def draw_card(c, x, y, width, height, name, font_name, header_text='', footer_te
     """
     绘制单个桌签（占满整页）
     
-    布局(根据TEXT_HEIGHT_CM计算):
+    布局(根据TEXT_HEIGHT_MM计算):
     ========================
     |    上空白 (自动计算)   | 
     +-------- -- ---------+
-    |     文字(倒过来)    | (TEXT_HEIGHT_CM)
+    |     文字(倒过来)    | (TEXT_HEIGHT_MM)
     +-------- -- ---------+
-    |      文字(正常)     | (TEXT_HEIGHT_CM)
+    |      文字(正常)     | (TEXT_HEIGHT_MM)
     +-------- -- ---------+
     |    下空白 (自动计算)   | 
     ========================
@@ -312,21 +312,32 @@ def draw_text_block(c, x, y, width, height, header_text, main_text, footer_text,
     if not header_text and not main_text and not footer_text:
         return
 
-    # 上方小字 (页头)
-    if header_text:
-        draw_text_centered(c, x, y + height - HEADER_MARGIN - HEADER_FONT_SIZE,
-                          width, HEADER_FONT_SIZE + 2, header_text,
-                          font_name, HEADER_FONT_SIZE, 0, rotated)
-
-    # 下方小字 (页脚)
-    if footer_text:
-        draw_text_centered(c, x, y + FOOTER_MARGIN,
-                          width, FOOTER_FONT_SIZE + 2, footer_text,
-                          font_name, FOOTER_FONT_SIZE, 0, rotated)
+    # 倒置区域需要在绘制前交换页头/页脚位置，旋转后呈现正确顺序
+    if rotated:
+        if footer_text:
+            draw_text_centered(c, x, y + height - FOOTER_MARGIN - FOOTER_FONT_SIZE,
+                              width, FOOTER_FONT_SIZE + 2, footer_text,
+                              font_name, FOOTER_FONT_SIZE, 0, rotated)
+        if header_text:
+            draw_text_centered(c, x, y + HEADER_MARGIN,
+                              width, HEADER_FONT_SIZE + 2, header_text,
+                              font_name, HEADER_FONT_SIZE, 0, rotated)
+        inner_y = y + HEADER_MARGIN + (HEADER_FONT_SIZE + 2 if header_text else 0)
+        inner_height = height - HEADER_MARGIN - FOOTER_MARGIN - (HEADER_FONT_SIZE + 2 if header_text else 0) - (FOOTER_FONT_SIZE + 2 if footer_text else 0)
+    else:
+        # 常规区域
+        if header_text:
+            draw_text_centered(c, x, y + height - HEADER_MARGIN - HEADER_FONT_SIZE,
+                              width, HEADER_FONT_SIZE + 2, header_text,
+                              font_name, HEADER_FONT_SIZE, 0, rotated)
+        if footer_text:
+            draw_text_centered(c, x, y + FOOTER_MARGIN,
+                              width, FOOTER_FONT_SIZE + 2, footer_text,
+                              font_name, FOOTER_FONT_SIZE, 0, rotated)
+        inner_y = y + FOOTER_MARGIN + (FOOTER_FONT_SIZE + 2 if footer_text else 0)
+        inner_height = height - HEADER_MARGIN - FOOTER_MARGIN - (HEADER_FONT_SIZE + 2 if header_text else 0) - (FOOTER_FONT_SIZE + 2 if footer_text else 0)
 
     # 中间主体文字区域
-    inner_y = y + FOOTER_MARGIN + (FOOTER_FONT_SIZE + 2 if footer_text else 0)
-    inner_height = height - HEADER_MARGIN - FOOTER_MARGIN - (HEADER_FONT_SIZE + 2 if header_text else 0) - (FOOTER_FONT_SIZE + 2 if footer_text else 0)
     if inner_height > 0 and main_text:
         draw_text_centered(c, x, inner_y, width, inner_height, main_text,
                           font_name, font_size, char_spacing, rotated)

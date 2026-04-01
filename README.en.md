@@ -51,7 +51,21 @@ python generate_table_tent_card.py -i names.csv -o table_tents.pdf
 
 ## Configuration
 
-Edit `generate_table_tent_card.py`, see comments for details.
+Open `generate_table_tent_card.py` and adjust these global variables as needed:
+
+- `PAGE_SIZE`: page size (e.g., `A4`, `LETTER`, `landscape(A3)`)
+- `FONT_NAME`: font path or empty string to auto-detect system Chinese fonts
+- `TEXT_HEIGHT_MM`: text area height (cm) for each text block (upside-down / right-side-up)
+- `FONT_SIZES`: map of name length to font size in points (fallback key `0`)
+- `CHAR_SPACING`: map of name length to character spacing in points (fallback key `0`)
+- `SIDE_MARGIN`: minimum left/right margin in points
+- `HEADER_MARGIN`: offset of header text from top of each text block (pt)
+- `FOOTER_MARGIN`: offset of footer text from bottom of each text block (pt)
+- `HEADER_FONT_SIZE`: header text font size (pt)
+- `FOOTER_FONT_SIZE`: footer text font size (pt)
+- `HEADER` and `FOOTER`: optional global text that overrides per-row header/footer when set
+
+Each row in the CSV can override header/footer values via columns: `页头`/`header` and `页脚`/`footer`.
 
 ## Features
 
