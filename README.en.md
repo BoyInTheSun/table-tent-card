@@ -35,9 +35,11 @@ Christopher Alexander Montgomery,,VP of Engineering
 python generate_table_tent_card.py
 ```
 
+**Size information**: The script outputs page dimensions, gluing height, actual bottom height, text area height, and estimated standing height for reference.
+
 ### 4. Print
 
-Print on cardstock, fold along the lines, overlap the blank areas and glue or staple to create simple triangular table tents. Can also be inserted into transparent table tent holders.
+Print on cardstock, fold along the gray lines, overlap according to the black lines and glue or staple to create simple triangular table tents. Can also be inserted into transparent table tent holders.
 
 ## Usage
 
@@ -56,6 +58,7 @@ Open `generate_table_tent_card.py` and adjust these global variables as needed:
 - `PAGE_SIZE`: page size (e.g., `A4`, `LETTER`, `landscape(A3)`)
 - `FONT_NAME`: font path or empty string to auto-detect system Chinese fonts
 - `TEXT_HEIGHT_MM`: text area height (cm) for each text block (upside-down / right-side-up)
+- `GLUE_LINE_MM`: distance of gluing guide lines from page edges (mm)
 - `FONT_SIZES`: map of name length to font size in points (fallback key `0`)
 - `CHAR_SPACING`: map of name length to character spacing in points (fallback key `0`)
 - `SIDE_MARGIN`: minimum left/right margin in points

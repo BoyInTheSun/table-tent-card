@@ -24,7 +24,10 @@ PAGE_SIZE = A4
 FONT_NAME = ''
 
 # 文字区域高度 (单位: mm, 倒文字和正文字区域各占此高度，剩余为上下空白)
-TEXT_HEIGHT_MM = 90
+TEXT_HEIGHT_MM = 93
+
+# 粘合标记线距纸张边框距离 (单位: mm)
+GLUE_LINE_MM = 20
 
 # 根据字数设置字体大小 (键为字数，0为默认值，单位: pt)
 FONT_SIZES = {
@@ -221,6 +224,21 @@ def generate_pdf(data, output_file='table_tent_cards.pdf'):
     
     page_width, page_height = PAGE_SIZE
     
+    # 输出尺寸信息
+    page_width_mm = page_width / mm
+    page_height_mm = page_height / mm
+    glue_height_mm = GLUE_LINE_MM
+    bottom_height_mm = page_height_mm - TEXT_HEIGHT_MM * 2 - GLUE_LINE_MM
+    text_area_height_mm = TEXT_HEIGHT_MM
+    # 桌签立起后高度
+    standing_height_mm = (text_area_height_mm ** 2 - (bottom_height_mm / 2) ** 2) ** .5
+    
+    print(f"【尺寸信息】纸张尺寸: {page_width_mm:.1f}mm x {page_height_mm:.1f}mm")
+    print(f"【尺寸信息】粘合高度: {glue_height_mm}mm")
+    print(f"【尺寸信息】底部实际高度: {bottom_height_mm:.1f}mm")
+    print(f"【尺寸信息】文字区域高度: {text_area_height_mm}mm")
+    print(f"【尺寸信息】桌签立起后高度: {standing_height_mm:.1f}mm")
+    
     for item_idx, (name, header_text, footer_text) in enumerate(data):
         # 检查是否需要新页面（第一个名字不需要新页面）
         if item_idx > 0:
@@ -272,6 +290,16 @@ def draw_card(c, x, y, width, height, name, font_name, header_text='', footer_te
     
     for line_y in line_y_positions:
         c.line(x, line_y, x + width, line_y)
+    
+    # 绘制粘合标记线 - 黑色实线
+    c.setLineWidth(1.0)
+    c.setStrokeColor(colors.black)
+    
+    glue_top_y = y + GLUE_LINE_MM * mm
+    glue_bottom_y = y + height - GLUE_LINE_MM * mm
+    
+    c.line(x, glue_top_y, x + width, glue_top_y)
+    c.line(x, glue_bottom_y, x + width, glue_bottom_y)
     
     # 根据字数获取字体参数
     name_length = len(name)
