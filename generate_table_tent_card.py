@@ -234,10 +234,8 @@ def generate_pdf(data, output_file='table_tent_cards.pdf'):
     standing_height_mm = (text_area_height_mm ** 2 - (bottom_height_mm / 2) ** 2) ** .5
     
     print(f"【尺寸信息】纸张尺寸: {page_width_mm:.1f}mm x {page_height_mm:.1f}mm")
-    print(f"【尺寸信息】粘合高度: {glue_height_mm}mm")
-    print(f"【尺寸信息】底部实际高度: {bottom_height_mm:.1f}mm")
-    print(f"【尺寸信息】文字区域高度: {text_area_height_mm}mm")
-    print(f"【尺寸信息】桌签立起后高度: {standing_height_mm:.1f}mm")
+    print(f"【尺寸信息】粘合距离: {glue_height_mm:.1f}mm 底部实际距离: {bottom_height_mm:.1f}mm 文字区域高度: {text_area_height_mm:.1f}mm")
+    print(f"【尺寸信息】桌签宽度: {page_width_mm:.1f}mm 桌签高度: {standing_height_mm:.1f}mm")
     
     for item_idx, (name, header_text, footer_text) in enumerate(data):
         # 检查是否需要新页面（第一个名字不需要新页面）
